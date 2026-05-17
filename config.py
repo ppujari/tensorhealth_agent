@@ -8,8 +8,8 @@ own sections, section order, ad placement, and sources.
 import os
 
 # ---------- API ----------
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "PLACEHOLDER_API_KEY")
-MODEL = "claude-sonnet-4-5"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "PLACEHOLDER_API_KEY")
+MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_TOKENS = 4096
 
 # ---------- Output ----------
@@ -82,6 +82,7 @@ NEWSLETTERS = {
             "th_emerging_trends",
             "th_top_papers",
             "th_top_lectures",
+            "th_hiring",
         ],
         "ad_after_index": 3,  # after holistic_health (0-based)
         "ad_html": TENSORHEALTH_AD,
@@ -108,8 +109,11 @@ NEWSLETTERS = {
             },
             "th_events": {
                 "title": "Upcoming Events 🗓️",
-                "listing_urls": [],
-                "lookback_days": 30,
+                "listing_urls": [
+                    "https://www.eventbrite.com/d/online/ai/",
+                    "https://www.meetup.com/topics/ai/",
+                ],
+                "lookback_days": 180,  # 6 months
             },
             "th_code_lab": {
                 "title": "Clinical Code Lab: Step-by-Step Guides to AI💻",
@@ -131,6 +135,11 @@ NEWSLETTERS = {
             },
             "th_top_lectures": {
                 "title": "Top Lectures🎓",
+                "listing_urls": [],
+                "lookback_days": 14,
+            },
+            "th_hiring": {
+                "title": "AI Hiring 💼",
                 "listing_urls": [],
                 "lookback_days": 14,
             },

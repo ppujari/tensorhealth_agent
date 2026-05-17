@@ -2,17 +2,17 @@
 Agent loop.
 
 Thin dispatcher:
-  1. Send user prompt + tools to Claude
-  2. Handle tool_use blocks (fetch_url, save_section_draft)
-  3. Feed results back until Claude says 'end_turn'
+  1. Send user prompt + tools to Groq
+  2. Handle tool_calls (fetch_url, save_section_draft)
+  3. Feed results back until the model says 'stop'
 
 All section-specific logic lives in tools/<section>.py, not here.
 """
 
 import json
-from anthropic import Anthropic
+from groq import Groq
 
-from config import ANTHROPIC_API_KEY, MODEL, MAX_TOKENS, MAX_FETCHES_PER_RUN
+from config import GROQ_API_KEY, MODEL, MAX_TOKENS, MAX_FETCHES_PER_RUN
 from tools.schemas import get_tools_for_run
 from tools.fetcher import fetch_url
 from rendering.html_builder import render_document
@@ -36,19 +36,19 @@ SYSTEM_PROMPT = (
 )
 
 
-def _handle_tool_calls(response_content, collected, fetch_count):
+def _handle_tool_calls(tool_calls, collected, fetch_count):
     """
-    Process all tool_use blocks in a response.
+    Process all tool calls from a Groq response.
 
-    Returns (tool_result_blocks, updated_fetch_count).
+    Returns (tool_result_messages, updated_fetch_count).
     """
-    tool_results = []
-    for block in response_content:
-        if block.type != "tool_use":
-            continue
+    tool_result_messages = []
+    for tc in tool_calls:
+        name = tc.function.name
+        args = json.loads(tc.function.arguments)
 
-        if block.name == "fetch_url":
-            url = block.input["url"]
+        if name == "fetch_url":
+            url = args["url"]
             if fetch_count >= MAX_FETCHES_PER_RUN:
                 result = {
                     "status": "error",
@@ -65,33 +65,25 @@ def _handle_tool_calls(response_content, collected, fetch_count):
                     print(f"    ✓ got {len(result['text'])} chars")
                 else:
                     print(f"    ! {result['error']}")
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps(result),
-            })
 
-        elif block.name == "save_section_draft":
-            section_key = block.input["section_key"]
-            items = block.input["items"]
+        elif name == "save_section_draft":
+            section_key = args["section_key"]
+            items = args["items"]
             collected[section_key] = items
             print(f"  ✓ draft received for '{section_key}' ({len(items)} items)")
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps({"status": "ok"}),
-            })
+            result = {"status": "ok"}
 
         else:
-            print(f"  ! unknown tool call: {block.name}")
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps({"error": f"unknown tool: {block.name}"}),
-                "is_error": True,
-            })
+            print(f"  ! unknown tool call: {name}")
+            result = {"error": f"unknown tool: {name}"}
 
-    return tool_results, fetch_count
+        tool_result_messages.append({
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": json.dumps(result),
+        })
+
+    return tool_result_messages, fetch_count
 
 
 def run_research(user_prompt):
@@ -100,34 +92,53 @@ def run_research(user_prompt):
 
     Returns a dict: section_key -> list of items.
     """
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     tools = get_tools_for_run()
-    messages = [{"role": "user", "content": user_prompt}]
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
     collected = {}
     fetch_count = 0
 
     while True:
-        print("→ calling Claude...")
-        response = client.messages.create(
+        print("→ calling Groq...")
+        response = client.chat.completions.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            tools=tools,
             messages=messages,
+            tools=tools,
         )
 
-        if response.stop_reason == "end_turn":
+        choice = response.choices[0]
+        message = choice.message
+
+        if choice.finish_reason == "stop":
             print("← agent finished")
             return collected
 
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
+        if choice.finish_reason == "tool_calls":
+            messages.append({
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in message.tool_calls
+                ],
+            })
             tool_results, fetch_count = _handle_tool_calls(
-                response.content, collected, fetch_count
+                message.tool_calls, collected, fetch_count
             )
-            messages.append({"role": "user", "content": tool_results})
+            messages.extend(tool_results)
         else:
-            print(f"! unexpected stop_reason: {response.stop_reason}")
+            print(f"! unexpected finish_reason: {choice.finish_reason}")
             return collected
 
 
