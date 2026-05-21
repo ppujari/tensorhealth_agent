@@ -113,11 +113,9 @@ def _build_image_prompt(images, section_key, url):
     })
     for b64 in images:
         content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": b64,
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{b64}",
             },
         })
     return content
@@ -140,7 +138,7 @@ def build_research_prompt(section_key="th_ai_shift"):
         print(f"  ✓ extracted {len(text)} chars of text")
         return _build_text_prompt(text, section_key, url)
 
-    # Scanned PDF — use Claude's vision
+    # Scanned PDF — use vision model
     print(f"  text extraction got {len(text)} chars — using vision instead")
     images = _pages_to_images(pdf_path)
     if not images:

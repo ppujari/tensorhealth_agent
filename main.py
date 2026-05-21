@@ -12,7 +12,7 @@ from datetime import datetime
 
 from config import get_newsletter
 from agent import run_research, build_and_save
-from tools import opinion, papers, ai_shift, showcase, news, dev_corner, trends
+from tools import opinion, papers, ai_shift, showcase, news, dev_corner, trends, events, hiring
 
 
 def run(newsletter_key):
@@ -79,6 +79,28 @@ def run(newsletter_key):
     )
     collected = run_research(prompt)
     all_collected.update(collected)
+
+    # --- Section: Upcoming Events ---
+    events_key = [k for k in newsletter["section_order"] if "events" in k][0]
+    print(f"\n--- {newsletter['sections'][events_key]['title']} ---")
+    prompt = events.build_research_prompt(section_key=events_key)
+    collected = run_research(prompt) 
+    all_collected.update(collected)
+
+    # --- Section: Top AI Hiring ---
+    hiring_keys = [k for k in newsletter["section_order"] if "hiring" in k]
+    if hiring_keys:
+        hiring_key = hiring_keys[0]
+        hiring_cfg = newsletter["sections"][hiring_key]
+        print(f"\n--- {hiring_cfg['title']} ---")
+        listing_url = hiring_cfg["listing_urls"][0] if hiring_cfg["listing_urls"] else None
+        prompt = hiring.build_research_prompt(
+            section_key=hiring_key,
+            listing_url=listing_url,
+        )
+        collected = run_research(prompt)
+        all_collected.update(collected)
+
 
     # --- Section: Emerging Trends (runs LAST — synthesizes from above) ---
     trends_key = [k for k in newsletter["section_order"] if "trends" in k][0]
